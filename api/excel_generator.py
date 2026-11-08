@@ -1,18 +1,22 @@
+"""Módulo para la generación del archivo Excel de operaciones StarPerú."""
+
 import io
 import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 
 
 def generar_excel_bytes(rotaciones, fecha):
+    """Genera y retorna en bytes el libro Excel con formato de itinerario operativo."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Itinerario"
 
     fecha_val = fecha if (fecha and fecha.strip()) else "05/11/2026"
 
+    # Encabezados oficiales sin columnas PEA
     headers = [
-        "FECHA", "AEROLIN", "MATRICULA", "AERONAVE", "VUELO_L", "CIUDAD_L", "PEA_L", "ETA",
-        "AEROLIN", "MATRICULA_S", "AERONAVE_S", "VUELO_S", "CIUDAD_S", "PEA_S", "ETD", "T_VUELO"
+        "FECHA", "AEROLIN", "MATRICULA", "AERONAVE", "VUELO_L", "CIUDAD_L", "ETA",
+        "AEROLIN", "MATRICULA_S", "AERONAVE_S", "VUELO_S", "CIUDAD_S", "ETD", "T_VUELO"
     ]
     ws.append(headers)
 
@@ -31,6 +35,7 @@ def generar_excel_bytes(rotaciones, fecha):
         bottom=Side(style='thin', color='D9D9D9')
     )
 
+    # Estilo de cabecera verde menta
     for col in range(1, len(headers) + 1):
         cell = ws.cell(row=1, column=col)
         cell.font = font_header
@@ -44,60 +49,60 @@ def generar_excel_bytes(rotaciones, fecha):
         sal = r.get("salida", {})
         lleg = r.get("llegada", {})
 
+        # 1. FILA DE SALIDA: Columnas H a M amarillas (cols 8 a 13)
         fila_salida = [
-            fecha_val,
-            "", "", "", "", "", "", "",
-            sal.get("aerolin", "2I"),
-            sal.get("matricula", ""),
-            sal.get("aeronave", "B-737-300"),
-            sal.get("vuelo", ""),
-            sal.get("ciudad", ""),
-            sal.get("pea", ""),
-            sal.get("etd", ""),
-            ""
+            fecha_val,                                # A: FECHA
+            "", "", "", "", "", "",                   # B-G: Vacías (Llegada)
+            sal.get("aerolin", "2I"),                 # H: AEROLIN
+            sal.get("matricula", ""),                 # I: MATRICULA_S
+            sal.get("aeronave", "B-737-300"),         # J: AERONAVE_S
+            sal.get("vuelo", ""),                     # K: VUELO_S
+            sal.get("ciudad", ""),                    # L: CIUDAD_S
+            sal.get("etd", ""),                       # M: ETD
+            ""                                        # N: T_VUELO
         ]
         ws.append(fila_salida)
 
-        for col_idx in range(1, 17):
+        for col_idx in range(1, 15):
             cell = ws.cell(row=fila_actual, column=col_idx)
             cell.font = font_data
             cell.alignment = align_center
             cell.border = thin_border
-            if col_idx in [9, 10, 11, 12, 13, 15]:
+            if col_idx in [8, 9, 10, 11, 12, 13]:
                 cell.fill = fill_amarillo
 
         ws.row_dimensions[fila_actual].height = 20
         fila_actual += 1
 
+        # 2. FILA DE LLEGADA: Columnas B a G amarillas (cols 2 a 7)
         fila_llegada = [
-            fecha_val,
-            lleg.get("aerolin", "2I"),
-            lleg.get("matricula", ""),
-            lleg.get("aeronave", "B-737-300"),
-            lleg.get("vuelo", ""),
-            lleg.get("ciudad", ""),
-            lleg.get("pea", ""),
-            lleg.get("eta", ""),
-            "", "", "", "", "", "", "",
-            ""
+            fecha_val,                                # A: FECHA
+            lleg.get("aerolin", "2I"),                # B: AEROLIN
+            lleg.get("matricula", ""),                # C: MATRICULA
+            lleg.get("aeronave", "B-737-300"),        # D: AERONAVE
+            lleg.get("vuelo", ""),                    # E: VUELO_L
+            lleg.get("ciudad", ""),                   # F: CIUDAD_L
+            lleg.get("eta", ""),                      # G: ETA
+            "", "", "", "", "", "",                   # H-M: Vacías (Salida)
+            ""                                        # N: T_VUELO
         ]
         ws.append(fila_llegada)
 
-        for col_idx in range(1, 17):
+        for col_idx in range(1, 15):
             cell = ws.cell(row=fila_actual, column=col_idx)
             cell.font = font_data
             cell.alignment = align_center
             cell.border = thin_border
-            if col_idx in [2, 3, 4, 5, 6, 8]:
+            if col_idx in [2, 3, 4, 5, 6, 7]:
                 cell.fill = fill_amarillo
 
         ws.row_dimensions[fila_actual].height = 20
         fila_actual += 1
 
+    # Ajuste de ancho de columnas A hasta N
     anchos = {
-        "A": 14, "B": 11, "C": 16, "D": 16, "E": 11, "F": 12,
-        "G": 10, "H": 11, "I": 11, "J": 16, "K": 16, "L": 11,
-        "M": 12, "N": 10, "O": 11, "P": 12
+        "A": 14, "B": 11, "C": 16, "D": 16, "E": 11, "F": 12, "G": 11,
+        "H": 11, "I": 16, "J": 16, "K": 11, "L": 12, "M": 11, "N": 12
     }
     for col_letter, ancho in anchos.items():
         ws.column_dimensions[col_letter].width = ancho
