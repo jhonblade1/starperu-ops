@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-# Configuración de ruta para ejecución local y Serverless
 DIRECTORIO_ACTUAL = Path(__file__).resolve().parent
 if str(DIRECTORIO_ACTUAL) not in sys.path:
     sys.path.insert(0, str(DIRECTORIO_ACTUAL))
@@ -40,6 +39,7 @@ class ExportRequest(BaseModel):
 
 
 @app.get("/")
+@app.get("/health")
 @app.get("/api")
 @app.get("/api/health")
 def health():
@@ -47,6 +47,8 @@ def health():
     return {"status": "ok"}
 
 
+@app.post("/process")
+@app.post("/api/process")
 @app.post("/parse")
 @app.post("/api/parse")
 async def parse_pdf_endpoint(file: UploadFile = File(...)):
