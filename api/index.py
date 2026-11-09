@@ -62,6 +62,9 @@ async def parse_pdf_endpoint(file: UploadFile = File(...)):
     return extraer_datos_pdf(contenido)
 
 
+# Decoradores coincidentes con la llamada /api/export del frontend
+@app.post("/export")
+@app.post("/api/export")
 @app.post("/export-excel")
 @app.post("/api/export-excel")
 async def export_excel_endpoint(req: ExportRequest):
