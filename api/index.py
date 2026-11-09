@@ -1,3 +1,4 @@
+# pylint: disable=wrong-import-order,wrong-import-position,import-error
 """API principal FastAPI para el servicio Serverless en Vercel."""
 
 import sys
@@ -38,12 +39,15 @@ class ExportRequest(BaseModel):
     fecha: str
 
 
+@app.get("/")
+@app.get("/api")
 @app.get("/api/health")
 def health():
     """Verificación de estado de la API."""
     return {"status": "ok"}
 
 
+@app.post("/parse")
 @app.post("/api/parse")
 async def parse_pdf_endpoint(file: UploadFile = File(...)):
     """Extrae las rotaciones desde el PDF subido."""
@@ -56,6 +60,7 @@ async def parse_pdf_endpoint(file: UploadFile = File(...)):
     return extraer_datos_pdf(contenido)
 
 
+@app.post("/export-excel")
 @app.post("/api/export-excel")
 async def export_excel_endpoint(req: ExportRequest):
     """Genera y descarga el archivo Excel oficial."""
