@@ -6,8 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from api.parser import extraer_datos_pdf
-from api.excel_generator import generar_excel_bytes
+# Importaciones directas/relativas compatibles con Vercel
+try:
+    from parser import extraer_datos_pdf
+    from excel_generator import generar_excel_bytes
+except ImportError:
+    from api.parser import extraer_datos_pdf
+    from api.excel_generator import generar_excel_bytes
 
 app = FastAPI(title="StarPeru Ops API")
 
