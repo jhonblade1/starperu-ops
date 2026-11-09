@@ -1,7 +1,5 @@
 """API principal FastAPI para el servicio Serverless en Vercel."""
 
-from api.parser import extraer_datos_pdf  # pylint: disable=wrong-import-position
-from api.excel_generator import generar_excel_bytes  # pylint: disable=wrong-import-position
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -16,6 +14,12 @@ DIRECTORIO_ACTUAL = Path(__file__).resolve().parent
 if str(DIRECTORIO_ACTUAL) not in sys.path:
     sys.path.insert(0, str(DIRECTORIO_ACTUAL))
 
+try:
+    from pdf_parser import extraer_datos_pdf
+    from excel_generator import generar_excel_bytes
+except ImportError:
+    from api.pdf_parser import extraer_datos_pdf
+    from api.excel_generator import generar_excel_bytes
 
 app = FastAPI(title="StarPeru Ops API")
 
