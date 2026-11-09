@@ -11,9 +11,9 @@ def generar_excel_bytes(rotaciones, fecha):
     ws = wb.active
     ws.title = "Itinerario"
 
-    fecha_val = fecha if (fecha and fecha.strip()) else "05/11/2026"
+    fecha_val = fecha if (fecha and fecha.strip()) else "06/11/2026"
 
-    # Encabezados oficiales sin columnas PEA
+    # Encabezados oficiales A-N (sin PEA)
     headers = [
         "FECHA", "AEROLIN", "MATRICULA", "AERONAVE", "VUELO_L", "CIUDAD_L", "ETA",
         "AEROLIN", "MATRICULA_S", "AERONAVE_S", "VUELO_S", "CIUDAD_S", "ETD", "T_VUELO"
@@ -35,7 +35,6 @@ def generar_excel_bytes(rotaciones, fecha):
         bottom=Side(style='thin', color='D9D9D9')
     )
 
-    # Estilo de cabecera verde menta
     for col in range(1, len(headers) + 1):
         cell = ws.cell(row=1, column=col)
         cell.font = font_header
@@ -51,15 +50,15 @@ def generar_excel_bytes(rotaciones, fecha):
 
         # 1. FILA DE SALIDA: Columnas H a M amarillas (cols 8 a 13)
         fila_salida = [
-            fecha_val,                                # A: FECHA
-            "", "", "", "", "", "",                   # B-G: Vacías (Llegada)
-            sal.get("aerolin", "2I"),                 # H: AEROLIN
-            sal.get("matricula", ""),                 # I: MATRICULA_S
-            sal.get("aeronave", "B-737-300"),         # J: AERONAVE_S
-            sal.get("vuelo", ""),                     # K: VUELO_S
-            sal.get("ciudad", ""),                    # L: CIUDAD_S
-            sal.get("etd", ""),                       # M: ETD
-            ""                                        # N: T_VUELO
+            fecha_val,
+            "", "", "", "", "", "",
+            sal.get("aerolin", "2I"),
+            sal.get("matricula", ""),
+            sal.get("aeronave", "B-737-300"),
+            sal.get("vuelo", ""),
+            sal.get("ciudad", ""),
+            sal.get("etd", ""),
+            ""
         ]
         ws.append(fila_salida)
 
@@ -76,15 +75,15 @@ def generar_excel_bytes(rotaciones, fecha):
 
         # 2. FILA DE LLEGADA: Columnas B a G amarillas (cols 2 a 7)
         fila_llegada = [
-            fecha_val,                                # A: FECHA
-            lleg.get("aerolin", "2I"),                # B: AEROLIN
-            lleg.get("matricula", ""),                # C: MATRICULA
-            lleg.get("aeronave", "B-737-300"),        # D: AERONAVE
-            lleg.get("vuelo", ""),                    # E: VUELO_L
-            lleg.get("ciudad", ""),                   # F: CIUDAD_L
-            lleg.get("eta", ""),                      # G: ETA
-            "", "", "", "", "", "",                   # H-M: Vacías (Salida)
-            ""                                        # N: T_VUELO
+            fecha_val,
+            lleg.get("aerolin", "2I"),
+            lleg.get("matricula", ""),
+            lleg.get("aeronave", "B-737-300"),
+            lleg.get("vuelo", ""),
+            lleg.get("ciudad", ""),
+            lleg.get("eta", ""),
+            "", "", "", "", "", "",
+            ""
         ]
         ws.append(fila_llegada)
 
@@ -99,7 +98,6 @@ def generar_excel_bytes(rotaciones, fecha):
         ws.row_dimensions[fila_actual].height = 20
         fila_actual += 1
 
-    # Ajuste de ancho de columnas A hasta N
     anchos = {
         "A": 14, "B": 11, "C": 16, "D": 16, "E": 11, "F": 12, "G": 11,
         "H": 11, "I": 16, "J": 16, "K": 11, "L": 12, "M": 11, "N": 12

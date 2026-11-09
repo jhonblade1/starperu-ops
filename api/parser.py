@@ -4,7 +4,6 @@ import io
 import re
 from pypdf import PdfReader
 
-# Mapeo de estaciones a formato PE...
 MAPA_CIUDADES = {
     "CIX": "PECIX", "CHICLAYO": "PECIX",
     "PCL": "PEPCL", "PUCALLPA": "PEPCL",
@@ -59,8 +58,7 @@ def determinar_aeronave(matricula, vuelo=""):
 
 
 def extraer_fecha(texto):
-    """Detecta fechas escritas en texto (VIERNES 6 DE NOVIEMBRE DEL 2026) o numéricas."""
-    # 1. Búsqueda en texto completo: Ej. "6 DE NOVIEMBRE DEL 2026"
+    """Detecta fechas en texto natural (VIERNES 6 DE NOVIEMBRE DEL 2026) o DD/MM/AAAA."""
     patron_texto = re.search(
         r"(\d{1,2})\s+DE\s+(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SETIEMBRE|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)\s+(?:DEL?)\s+(\d{4})",
         texto.upper()
@@ -71,7 +69,6 @@ def extraer_fecha(texto):
         anio = patron_texto.group(3)
         return f"{dia}/{mes}/{anio}"
 
-    # 2. Formato numérico DD/MM/AAAA
     match_num = re.search(r"(\b\d{2}[/-]\d{2}[/-]\d{4}\b)", texto)
     if match_num:
         return match_num.group(1).replace("-", "/")
@@ -80,6 +77,7 @@ def extraer_fecha(texto):
 
 
 def extraer_datos_pdf(archivo_bytes):
+    """Extrae las rotaciones y fecha oficial desde el archivo PDF."""
     try:
         reader = PdfReader(io.BytesIO(archivo_bytes))
     except Exception:
@@ -94,55 +92,47 @@ def extraer_datos_pdf(archivo_bytes):
     fecha = extraer_fecha(texto_completo)
     lineas = [l.strip() for l in texto_completo.split("\n") if l.strip()]
 
-    # Estructura para agrupar tramos
     tramos = []
-    matricula_actual = ""
+    matricula_activa = ""
 
     for l in lineas:
         l_up = l.upper()
 
-        # Detectar si la línea define una nueva matrícula
-        for tok in l_up.split():
-            m_cand = normalizar_matricula(tok)
-            if m_cand:
-                matricula_actual = m_cand
+        # 1. Detectar y propagar la matrícula activa (soporte celdas combinadas)
+        for mat_cand in ["N689AC", "N199WQ", "OB2176P", "OB2233P", "OB2234P"]:
+            if mat_cand in l_up.replace("-", "").replace(" ", ""):
+                matricula_activa = normalizar_matricula(mat_cand)
                 break
 
-        # Buscar vuelos (104..109, 2225..2226, 3115..3244, 4120..4121)
+        # 2. Extraer vuelos (3 o 4 dígitos) y horas HH:MM
         vuelos = re.findall(
-            r"\b(10[4-9]|222[56]|311[56]|313[12]|323[34]|324[34]|412[01])\b", l_up)
+            r"\b(10[4-9]|222[56]|311[1256]|312[12]|313[12]|314[78]|323[34]|324[34]|412[01])\b", l_up)
         horas = re.findall(r"\b([012]?\d:[0-5]\d)\b", l_up)
 
         if vuelos and horas:
             v_num = vuelos[0]
-            # Determinar origen y destino si figuran en la línea
-            es_salida_lim = "LIM" in l_up and any(c in l_up for c in ["HUU", "TPP", "PCL", "CIX", "VVN", "MVS"]) and l_up.find(
-                "LIM") < max(l_up.find(c) for c in ["HUU", "TPP", "PCL", "CIX", "VVN", "MVS"] if c in l_up)
-            es_llegada_lim = "LIM" in l_up and any(c in l_up for c in ["HUU", "TPP", "PCL", "CIX", "VVN", "MVS"]) and l_up.find(
-                "LIM") > min(l_up.find(c) for c in ["HUU", "TPP", "PCL", "CIX", "VVN", "MVS"] if c in l_up)
-
-            # Destino/origen provincial
             ciudad_detectada = ""
-            for c_code, c_full in MAPA_CIUDADES.items():
-                if re.search(rf"\b{c_code}\b", l_up):
-                    ciudad_detectada = c_full
+            for code in ["CIX", "PCL", "HUU", "TPP", "VVN", "MVS", "IQT", "CUZ", "AQP"]:
+                if re.search(rf"\b{code}\b", l_up):
+                    ciudad_detectada = MAPA_CIUDADES.get(code, f"PE{code}")
                     break
 
             tramos.append({
                 "vuelo": v_num,
-                "matricula": matricula_actual,
+                "matricula": matricula_activa,
                 "etd": horas[0],
                 "eta": horas[1] if len(horas) > 1 else horas[0],
                 "ciudad": ciudad_detectada,
-                "texto": l_up
+                "raw": l_up
             })
 
-    # Rotaciones oficiales completas de la base LIM (Salida de LIM y Regreso a LIM)
-    # Cubre vuelos directos y vuelos con escala (TPP-IQT, PCL-IQT, etc.)
-    pares_rotacion_esperados = [
-        # (Vuelo_Salida, Vuelo_Llegada, Matrícula por defecto, Ciudad default, ETD default, ETA default)
+    # Pares de vuelo operativos para la base LIM
+    pares_rotacion = [
         ("4120", "4121", "N-689AC",  "PEHUU", "07:20", "09:40"),
         ("3115", "3116", "OB-2176P", "PETPP", "07:55", "14:00"),
+        ("3111", "3112", "OB-2176P", "PEPCL", "07:15", "10:00"),
+        ("3121", "3122", "OB-2233P", "PECIX", "06:25", "12:10"),
+        ("3147", "3148", "OB-2234P", "PETPP", "07:55", "10:50"),
         ("104",  "105",  "N-199WQ",  "PEMVS", "08:00", "11:00"),
         ("3131", "3132", "OB-2234P", "PEPCL", "11:45", "17:40"),
         ("106",  "107",  "N-199WQ",  "PEMVS", "12:00", "15:00"),
@@ -154,45 +144,40 @@ def extraer_datos_pdf(archivo_bytes):
 
     rotaciones = []
 
-    for v_sal, v_lleg, mat_def, ciu_def, etd_def, eta_def in pares_rotacion_esperados:
-        # Buscar información extraída del PDF si existe
-        info_sal = next((t for t in tramos if t["vuelo"] == v_sal), None)
-        # Para la llegada a LIM, tomar el último tramo del vuelo de regreso
-        info_lleg = [t for t in tramos if t["vuelo"] == v_lleg]
-        info_lleg_fin = info_lleg[-1] if info_lleg else None
+    for v_sal, v_lleg, mat_def, ciu_def, etd_def, eta_def in pares_rotacion:
+        t_sal = [t for t in tramos if t["vuelo"] == v_sal]
+        t_lleg = [t for t in tramos if t["vuelo"] == v_lleg]
 
-        # Matrícula
-        mat = (info_sal and info_sal["matricula"]) or (
-            info_lleg_fin and info_lleg_fin["matricula"]) or mat_def
-        aero = determinar_aeronave(mat, v_sal)
+        if t_sal or t_lleg:
+            primer_sal = t_sal[0] if t_sal else None
+            ultimo_lleg = t_lleg[-1] if t_lleg else None
 
-        # Ciudad
-        ciu = (info_sal and info_sal["ciudad"]) or ciu_def
+            mat = (primer_sal and primer_sal["matricula"]) or (
+                ultimo_lleg and ultimo_lleg["matricula"]) or mat_def
+            aero = determinar_aeronave(mat, v_sal)
+            ciu = (primer_sal and primer_sal["ciudad"]) or (
+                ultimo_lleg and ultimo_lleg["ciudad"]) or ciu_def
+            etd = primer_sal["etd"] if primer_sal else etd_def
+            eta = ultimo_lleg["eta"] if ultimo_lleg else eta_def
 
-        # Horarios (ETD de salida desde LIM y ETA final de llegada a LIM)
-        etd = info_sal["etd"] if info_sal else etd_def
-        eta = (info_lleg_fin["eta"] if info_lleg_fin else eta_def)
+            rotaciones.append({
+                "salida": {
+                    "aerolin": "2I",
+                    "matricula": mat,
+                    "aeronave": aero,
+                    "vuelo": v_sal,
+                    "ciudad": ciu,
+                    "etd": etd
+                },
+                "llegada": {
+                    "aerolin": "2I",
+                    "matricula": mat,
+                    "aeronave": aero,
+                    "vuelo": v_lleg,
+                    "ciudad": ciu,
+                    "eta": eta
+                }
+            })
 
-        rotaciones.append({
-            "salida": {
-                "aerolin": "2I",
-                "matricula": mat,
-                "aeronave": aero,
-                "vuelo": v_sal,
-                "ciudad": ciu,
-                "etd": etd
-            },
-            "llegada": {
-                "aerolin": "2I",
-                "matricula": mat,
-                "aeronave": aero,
-                "vuelo": v_lleg,
-                "ciudad": ciu,
-                "eta": eta
-            }
-        })
-
-    # Ordenar cronológicamente por la hora de salida (ETD)
     rotaciones.sort(key=lambda r: r["salida"]["etd"])
-
     return {"fecha": fecha, "rotaciones": rotaciones}
