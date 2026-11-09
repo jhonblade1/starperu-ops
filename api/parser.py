@@ -50,6 +50,7 @@ def normalizar_matricula(texto):
 
 
 def determinar_aeronave(matricula, vuelo=""):
+    """Determina el tipo de aeronave a partir de la matrícula o el número de vuelo."""
     mat = matricula.upper()
     v_str = str(vuelo)
     if "689" in mat or "199" in mat or v_str.startswith("10") or v_str.startswith("41"):
@@ -58,11 +59,13 @@ def determinar_aeronave(matricula, vuelo=""):
 
 
 def extraer_fecha(texto):
-    """Detecta fechas en texto natural (VIERNES 6 DE NOVIEMBRE DEL 2026) o DD/MM/AAAA."""
-    patron_texto = re.search(
-        r"(\d{1,2})\s+DE\s+(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SETIEMBRE|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)\s+(?:DEL?)\s+(\d{4})",
-        texto.upper()
+    """Detecta fechas en texto natural (ej. 6 DE NOVIEMBRE DEL 2026) o DD/MM/AAAA."""
+    meses_re = (
+        "ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|"
+        "JULIO|AGOSTO|SETIEMBRE|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE"
     )
+    patron = rf"(\d{{1,2}})\s+DE\s+({meses_re})\s+(?:DEL?)\s+(\d{{4}})"
+    patron_texto = re.search(patron, texto.upper())
     if patron_texto:
         dia = patron_texto.group(1).zfill(2)
         mes = MESES[patron_texto.group(2)]
@@ -80,7 +83,7 @@ def extraer_datos_pdf(archivo_bytes):
     """Extrae las rotaciones y fecha oficial desde el archivo PDF."""
     try:
         reader = PdfReader(io.BytesIO(archivo_bytes))
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         return {"fecha": "06/11/2026", "rotaciones": []}
 
     texto_completo = ""
@@ -94,19 +97,17 @@ def extraer_datos_pdf(archivo_bytes):
 
     tramos = []
     matricula_activa = ""
+    vuelos_re = r"\b(10[4-9]|222[56]|311[1256]|312[12]|313[12]|314[78]|323[34]|324[34]|412[01])\b"
 
-    for l in lineas:
-        l_up = l.upper()
+    for linea in lineas:
+        l_up = linea.upper()
 
-        # 1. Detectar y propagar la matrícula activa (soporte celdas combinadas)
         for mat_cand in ["N689AC", "N199WQ", "OB2176P", "OB2233P", "OB2234P"]:
             if mat_cand in l_up.replace("-", "").replace(" ", ""):
                 matricula_activa = normalizar_matricula(mat_cand)
                 break
 
-        # 2. Extraer vuelos (3 o 4 dígitos) y horas HH:MM
-        vuelos = re.findall(
-            r"\b(10[4-9]|222[56]|311[1256]|312[12]|313[12]|314[78]|323[34]|324[34]|412[01])\b", l_up)
+        vuelos = re.findall(vuelos_re, l_up)
         horas = re.findall(r"\b([012]?\d:[0-5]\d)\b", l_up)
 
         if vuelos and horas:
@@ -126,7 +127,6 @@ def extraer_datos_pdf(archivo_bytes):
                 "raw": l_up
             })
 
-    # Pares de vuelo operativos para la base LIM
     pares_rotacion = [
         ("4120", "4121", "N-689AC",  "PEHUU", "07:20", "09:40"),
         ("3115", "3116", "OB-2176P", "PETPP", "07:55", "14:00"),
@@ -143,7 +143,6 @@ def extraer_datos_pdf(archivo_bytes):
     ]
 
     rotaciones = []
-
     for v_sal, v_lleg, mat_def, ciu_def, etd_def, eta_def in pares_rotacion:
         t_sal = [t for t in tramos if t["vuelo"] == v_sal]
         t_lleg = [t for t in tramos if t["vuelo"] == v_lleg]
@@ -152,11 +151,11 @@ def extraer_datos_pdf(archivo_bytes):
             primer_sal = t_sal[0] if t_sal else None
             ultimo_lleg = t_lleg[-1] if t_lleg else None
 
-            mat = (primer_sal and primer_sal["matricula"]) or (
-                ultimo_lleg and ultimo_lleg["matricula"]) or mat_def
+            mat = (primer_sal and primer_sal["matricula"]) or \
+                  (ultimo_lleg and ultimo_lleg["matricula"]) or mat_def
             aero = determinar_aeronave(mat, v_sal)
-            ciu = (primer_sal and primer_sal["ciudad"]) or (
-                ultimo_lleg and ultimo_lleg["ciudad"]) or ciu_def
+            ciu = (primer_sal and primer_sal["ciudad"]) or \
+                  (ultimo_lleg and ultimo_lleg["ciudad"]) or ciu_def
             etd = primer_sal["etd"] if primer_sal else etd_def
             eta = ultimo_lleg["eta"] if ultimo_lleg else eta_def
 
