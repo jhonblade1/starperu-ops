@@ -1,17 +1,21 @@
 """API principal FastAPI para el servicio Serverless en Vercel."""
 
-from typing import List, Dict, Any
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from api.parser import extraer_datos_pdf  # pylint: disable=wrong-import-position
+from api.excel_generator import generar_excel_bytes  # pylint: disable=wrong-import-position
+import sys
+from pathlib import Path
+from typing import Any, Dict, List
+
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-try:
-    from parser import extraer_datos_pdf
-    from excel_generator import generar_excel_bytes
-except ImportError:
-    from api.parser import extraer_datos_pdf
-    from api.excel_generator import generar_excel_bytes
+# Configuración de ruta para ejecución local y Serverless
+DIRECTORIO_ACTUAL = Path(__file__).resolve().parent
+if str(DIRECTORIO_ACTUAL) not in sys.path:
+    sys.path.insert(0, str(DIRECTORIO_ACTUAL))
+
 
 app = FastAPI(title="StarPeru Ops API")
 
@@ -25,39 +29,36 @@ app.add_middleware(
 
 
 class ExportRequest(BaseModel):
-    """Modelo de datos para la solicitud de exportación a Excel."""
+    """Modelo de datos para la exportación a Excel."""
     rotaciones: List[Dict[str, Any]]
     fecha: str
 
 
 @app.get("/api/health")
 def health():
-    """Ruta de verificación de estado del servicio."""
+    """Verificación de estado de la API."""
     return {"status": "ok"}
 
 
 @app.post("/api/parse")
 async def parse_pdf_endpoint(file: UploadFile = File(...)):
-    """Endpoint para recibir el PDF y retornar los datos extraídos."""
+    """Extrae las rotaciones desde el PDF subido."""
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=400,
             detail="El archivo debe ser un PDF válido."
         )
     contenido = await file.read()
-    resultado = extraer_datos_pdf(contenido)
-    return resultado
+    return extraer_datos_pdf(contenido)
 
 
 @app.post("/api/export-excel")
 async def export_excel_endpoint(req: ExportRequest):
-    """Endpoint para generar y descargar el archivo Excel procesado."""
+    """Genera y descarga el archivo Excel oficial."""
     excel_bytes = generar_excel_bytes(req.rotaciones, req.fecha)
-    nombre_limpio = req.fecha.replace("/", "-")
+    nombre_archivo = f"Itinerario_{req.fecha.replace('/', '-')}.xlsx"
     return Response(
         content=excel_bytes,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={
-            "Content-Disposition": f'attachment; filename="Itinerario_{nombre_limpio}.xlsx"'
-        }
+        headers={"Content-Disposition": f'attachment; filename="{nombre_archivo}"'}
     )
