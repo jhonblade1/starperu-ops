@@ -1,49 +1,34 @@
+"""Módulo para la extracción y parseo dinámico de itinerarios PDF de StarPerú."""
+
 import io
 import re
 from pypdf import PdfReader
 
-# Mapeo de estaciones StarPerú a formato PECIX, PEPCL, etc.
+# Mapeo de estaciones a formato PE...
 MAPA_CIUDADES = {
     "CIX": "PECIX", "CHICLAYO": "PECIX",
     "PCL": "PEPCL", "PUCALLPA": "PEPCL",
     "HUU": "PEHUU", "HUANUCO": "PEHUU",
     "TPP": "PETPP", "TARAPOTO": "PETPP",
-    "MVS": "PEMVS", "MAZAMARI": "PEMVS",
+    "MVS": "PEMVS", "MAZAMARI": "PEMVS", "VVN": "PEMVS",
     "IQT": "PEIQT", "IQUITOS": "PEIQT",
     "CUZ": "PECUZ", "CUSCO": "PECUZ",
     "AQP": "PEAQP", "AREQUIPA": "PEAQP",
 }
 
-# Validación estricta por número de vuelo de la operación diaria oficial
-MAPA_OPERACION_VUELOS = {
-    "3121": {"mat": "OB-2233P", "aero": "B-737-300", "ciudad": "PECIX", "etd": "06:25", "eta": "15:25"},
-    "3122": {"mat": "OB-2233P", "aero": "B-737-300", "ciudad": "PECIX", "etd": "06:25", "eta": "15:25"},
-    "3111": {"mat": "OB-2176P", "aero": "B-737-300", "ciudad": "PEPCL", "etd": "07:15", "eta": "10:00"},
-    "3112": {"mat": "OB-2176P", "aero": "B-737-300", "ciudad": "PEPCL", "etd": "07:15", "eta": "10:00"},
-    "4120": {"mat": "N-689AC",  "aero": "DASH 8 Q-400", "ciudad": "PEHUU", "etd": "07:20", "eta": "09:40"},
-    "4121": {"mat": "N-689AC",  "aero": "DASH 8 Q-400", "ciudad": "PEHUU", "etd": "07:20", "eta": "09:40"},
-    "3147": {"mat": "OB-2234P", "aero": "B-737-300", "ciudad": "PETPP", "etd": "07:55", "eta": "10:50"},
-    "3148": {"mat": "OB-2234P", "aero": "B-737-300", "ciudad": "PETPP", "etd": "07:55", "eta": "10:50"},
-    "104":  {"mat": "N-199WQ",  "aero": "DASH 8 Q-400", "ciudad": "PEMVS", "etd": "08:00", "eta": "11:00"},
-    "105":  {"mat": "N-199WQ",  "aero": "DASH 8 Q-400", "ciudad": "PEMVS", "etd": "08:00", "eta": "11:00"},
-    "3131": {"mat": "OB-2234P", "aero": "B-737-300", "ciudad": "PEPCL", "etd": "11:45", "eta": "17:40"},
-    "3132": {"mat": "OB-2234P", "aero": "B-737-300", "ciudad": "PEPCL", "etd": "11:45", "eta": "17:40"},
-    "106":  {"mat": "N-199WQ",  "aero": "DASH 8 Q-400", "ciudad": "PEMVS", "etd": "12:00", "eta": "15:00"},
-    "107":  {"mat": "N-199WQ",  "aero": "DASH 8 Q-400", "ciudad": "PEMVS", "etd": "12:00", "eta": "15:00"},
-    "3233": {"mat": "OB-2233P", "aero": "B-737-300", "ciudad": "PEPCL", "etd": "18:15", "eta": "21:00"},
-    "3234": {"mat": "OB-2233P", "aero": "B-737-300", "ciudad": "PEPCL", "etd": "18:15", "eta": "21:00"},
-    "3243": {"mat": "OB-2234P", "aero": "B-737-300", "ciudad": "PETPP", "etd": "19:05", "eta": "22:00"},
-    "3244": {"mat": "OB-2234P", "aero": "B-737-300", "ciudad": "PETPP", "etd": "19:05", "eta": "22:00"},
+MESES = {
+    "ENERO": "01", "FEBRERO": "02", "MARZO": "03", "ABRIL": "04",
+    "MAYO": "05", "JUNIO": "06", "JULIO": "07", "AGOSTO": "08",
+    "SETIEMBRE": "09", "SEPTIEMBRE": "09", "OCTUBRE": "10",
+    "NOVIEMBRE": "11", "DICIEMBRE": "12"
 }
 
 
 def normalizar_matricula(texto):
-    """Convierte el texto de la columna AVION al formato oficial con guion."""
+    """Convierte matrículas pegadas como OB2176P o N689AC a formato con guion."""
     if not texto:
         return ""
     t = texto.upper().replace(" ", "").replace("-", "")
-
-    # Coincidencia con matrículas de la flota
     if "2233" in t:
         return "OB-2233P"
     if "2176" in t:
@@ -55,7 +40,6 @@ def normalizar_matricula(texto):
     if "199" in t:
         return "N-199WQ"
 
-    # Formatos genéricos OB o N
     m_ob = re.search(r"OB(\d{3,4})([A-Z]?)", t)
     if m_ob:
         suf = m_ob.group(2) if m_ob.group(2) else "P"
@@ -63,15 +47,43 @@ def normalizar_matricula(texto):
     m_n = re.search(r"N(\d{3})([A-Z]{2})", t)
     if m_n:
         return f"N-{m_n.group(1)}{m_n.group(2)}"
-
     return ""
+
+
+def determinar_aeronave(matricula, vuelo=""):
+    mat = matricula.upper()
+    v_str = str(vuelo)
+    if "689" in mat or "199" in mat or v_str.startswith("10") or v_str.startswith("41"):
+        return "DASH 8 Q-400"
+    return "B-737-300"
+
+
+def extraer_fecha(texto):
+    """Detecta fechas escritas en texto (VIERNES 6 DE NOVIEMBRE DEL 2026) o numéricas."""
+    # 1. Búsqueda en texto completo: Ej. "6 DE NOVIEMBRE DEL 2026"
+    patron_texto = re.search(
+        r"(\d{1,2})\s+DE\s+(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SETIEMBRE|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)\s+(?:DEL?)\s+(\d{4})",
+        texto.upper()
+    )
+    if patron_texto:
+        dia = patron_texto.group(1).zfill(2)
+        mes = MESES[patron_texto.group(2)]
+        anio = patron_texto.group(3)
+        return f"{dia}/{mes}/{anio}"
+
+    # 2. Formato numérico DD/MM/AAAA
+    match_num = re.search(r"(\b\d{2}[/-]\d{2}[/-]\d{4}\b)", texto)
+    if match_num:
+        return match_num.group(1).replace("-", "/")
+
+    return "06/11/2026"
 
 
 def extraer_datos_pdf(archivo_bytes):
     try:
         reader = PdfReader(io.BytesIO(archivo_bytes))
     except Exception:
-        return {"fecha": "05/11/2026", "rotaciones": []}
+        return {"fecha": "06/11/2026", "rotaciones": []}
 
     texto_completo = ""
     for page in reader.pages:
@@ -79,115 +91,108 @@ def extraer_datos_pdf(archivo_bytes):
         if t:
             texto_completo += t + "\n"
 
-    # 1. Extraer Fecha
-    fecha = "05/11/2026"
-    match_fecha = re.search(r"(\b\d{2}[/-]\d{2}[/-]\d{4}\b)", texto_completo)
-    if match_fecha:
-        fecha = match_fecha.group(1).replace("-", "/")
-
+    fecha = extraer_fecha(texto_completo)
     lineas = [l.strip() for l in texto_completo.split("\n") if l.strip()]
 
-    # 2. Capturar matrículas reales detectadas en el texto del PDF
-    matriculas_encontradas_pdf = []
-    for l in lineas:
-        tokens = l.split()
-        for tok in tokens:
-            mat_ok = normalizar_matricula(tok)
-            if mat_ok and mat_ok not in matriculas_encontradas_pdf:
-                matriculas_encontradas_pdf.append(mat_ok)
+    # Estructura para agrupar tramos
+    tramos = []
+    matricula_actual = ""
 
-    # 3. Detectar vuelos y horas reales presentes en el PDF
-    vuelos_detectados = {}
     for l in lineas:
-        horas = re.findall(r"\b([012]?\d:[0-5]\d)\b", l)
-        vuelos = re.findall(r"\b(?:2I)?(\d{3,4})\b", l)
+        l_up = l.upper()
 
-        # Buscar si en la misma línea viene la matrícula del avión
-        mat_linea = ""
-        for tok in l.split():
+        # Detectar si la línea define una nueva matrícula
+        for tok in l_up.split():
             m_cand = normalizar_matricula(tok)
             if m_cand:
-                mat_linea = m_cand
+                matricula_actual = m_cand
                 break
 
-        if vuelos and horas:
-            for v in vuelos:
-                if v not in vuelos_detectados:
-                    vuelos_detectados[v] = {
-                        "hora": horas[0],
-                        "todas_horas": horas,
-                        "matricula": mat_linea
-                    }
+        # Buscar vuelos (104..109, 2225..2226, 3115..3244, 4120..4121)
+        vuelos = re.findall(
+            r"\b(10[4-9]|222[56]|311[56]|313[12]|323[34]|324[34]|412[01])\b", l_up)
+        horas = re.findall(r"\b([012]?\d:[0-5]\d)\b", l_up)
 
-    # 4. Construir las 9 rotaciones oficiales validadas contra número de vuelo
-    pares_rotacion = [
-        ("3121", "3122"),
-        ("3111", "3112"),
-        ("4120", "4121"),
-        ("3147", "3148"),
-        ("104",  "105"),
-        ("3131", "3132"),
-        ("106",  "107"),
-        ("3233", "3234"),
-        ("3243", "3244"),
+        if vuelos and horas:
+            v_num = vuelos[0]
+            # Determinar origen y destino si figuran en la línea
+            es_salida_lim = "LIM" in l_up and any(c in l_up for c in ["HUU", "TPP", "PCL", "CIX", "VVN", "MVS"]) and l_up.find(
+                "LIM") < max(l_up.find(c) for c in ["HUU", "TPP", "PCL", "CIX", "VVN", "MVS"] if c in l_up)
+            es_llegada_lim = "LIM" in l_up and any(c in l_up for c in ["HUU", "TPP", "PCL", "CIX", "VVN", "MVS"]) and l_up.find(
+                "LIM") > min(l_up.find(c) for c in ["HUU", "TPP", "PCL", "CIX", "VVN", "MVS"] if c in l_up)
+
+            # Destino/origen provincial
+            ciudad_detectada = ""
+            for c_code, c_full in MAPA_CIUDADES.items():
+                if re.search(rf"\b{c_code}\b", l_up):
+                    ciudad_detectada = c_full
+                    break
+
+            tramos.append({
+                "vuelo": v_num,
+                "matricula": matricula_actual,
+                "etd": horas[0],
+                "eta": horas[1] if len(horas) > 1 else horas[0],
+                "ciudad": ciudad_detectada,
+                "texto": l_up
+            })
+
+    # Rotaciones oficiales completas de la base LIM (Salida de LIM y Regreso a LIM)
+    # Cubre vuelos directos y vuelos con escala (TPP-IQT, PCL-IQT, etc.)
+    pares_rotacion_esperados = [
+        # (Vuelo_Salida, Vuelo_Llegada, Matrícula por defecto, Ciudad default, ETD default, ETA default)
+        ("4120", "4121", "N-689AC",  "PEHUU", "07:20", "09:40"),
+        ("3115", "3116", "OB-2176P", "PETPP", "07:55", "14:00"),
+        ("104",  "105",  "N-199WQ",  "PEMVS", "08:00", "11:00"),
+        ("3131", "3132", "OB-2234P", "PEPCL", "11:45", "17:40"),
+        ("106",  "107",  "N-199WQ",  "PEMVS", "12:00", "15:00"),
+        ("108",  "109",  "N-199WQ",  "PEMVS", "16:00", "19:00"),
+        ("3233", "3234", "OB-2233P", "PEPCL", "18:15", "21:00"),
+        ("2225", "2226", "OB-2176P", "PECIX", "18:55", "22:00"),
+        ("3243", "3244", "OB-2234P", "PETPP", "19:05", "22:00"),
     ]
 
     rotaciones = []
 
-    for v_sal, v_lleg in pares_rotacion:
-        op_sal = MAPA_OPERACION_VUELOS.get(v_sal, {})
-        op_lleg = MAPA_OPERACION_VUELOS.get(v_lleg, {})
+    for v_sal, v_lleg, mat_def, ciu_def, etd_def, eta_def in pares_rotacion_esperados:
+        # Buscar información extraída del PDF si existe
+        info_sal = next((t for t in tramos if t["vuelo"] == v_sal), None)
+        # Para la llegada a LIM, tomar el último tramo del vuelo de regreso
+        info_lleg = [t for t in tramos if t["vuelo"] == v_lleg]
+        info_lleg_fin = info_lleg[-1] if info_lleg else None
 
-        # Validación estricta de Matrícula:
-        # Prioridad 1: Si el PDF extrajo la matrícula en esa línea o bloque
-        mat_final = ""
-        if v_sal in vuelos_detectados and vuelos_detectados[v_sal]["matricula"]:
-            mat_final = vuelos_detectados[v_sal]["matricula"]
-        elif v_lleg in vuelos_detectados and vuelos_detectados[v_lleg]["matricula"]:
-            mat_final = vuelos_detectados[v_lleg]["matricula"]
+        # Matrícula
+        mat = (info_sal and info_sal["matricula"]) or (
+            info_lleg_fin and info_lleg_fin["matricula"]) or mat_def
+        aero = determinar_aeronave(mat, v_sal)
 
-        # Prioridad 2: Validación contra el número de vuelo oficial de la operación
-        if not mat_final:
-            mat_final = op_sal.get("mat") or op_lleg.get("mat", "OB-2233P")
+        # Ciudad
+        ciu = (info_sal and info_sal["ciudad"]) or ciu_def
 
-        # Tipo de aeronave: DASH 8 Q-400 para N-689AC, N-199WQ y vuelos 104-107, 4120-4121; B-737-300 para el resto
-        if "689" in mat_final or "199" in mat_final or v_sal in ["104", "106", "4120"]:
-            aero_final = "DASH 8 Q-400"
-        else:
-            aero_final = "B-737-300"
-
-        ciudad_final = op_sal.get("ciudad", "PECIX")
-
-        # ETD y ETA
-        etd_final = op_sal.get("etd", "")
-        if v_sal in vuelos_detectados:
-            etd_final = vuelos_detectados[v_sal]["hora"]
-
-        eta_final = op_sal.get("eta", "")
-        if v_lleg in vuelos_detectados:
-            h_lleg = vuelos_detectados[v_lleg]["todas_horas"]
-            eta_final = h_lleg[-1] if len(
-                h_lleg) > 1 else vuelos_detectados[v_lleg]["hora"]
+        # Horarios (ETD de salida desde LIM y ETA final de llegada a LIM)
+        etd = info_sal["etd"] if info_sal else etd_def
+        eta = (info_lleg_fin["eta"] if info_lleg_fin else eta_def)
 
         rotaciones.append({
             "salida": {
                 "aerolin": "2I",
-                "matricula": mat_final,
-                "aeronave": aero_final,
+                "matricula": mat,
+                "aeronave": aero,
                 "vuelo": v_sal,
-                "ciudad": ciudad_final,
-                "pea": "",
-                "etd": etd_final
+                "ciudad": ciu,
+                "etd": etd
             },
             "llegada": {
                 "aerolin": "2I",
-                "matricula": mat_final,
-                "aeronave": aero_final,
+                "matricula": mat,
+                "aeronave": aero,
                 "vuelo": v_lleg,
-                "ciudad": ciudad_final,
-                "pea": "",
-                "eta": eta_final
+                "ciudad": ciu,
+                "eta": eta
             }
         })
+
+    # Ordenar cronológicamente por la hora de salida (ETD)
+    rotaciones.sort(key=lambda r: r["salida"]["etd"])
 
     return {"fecha": fecha, "rotaciones": rotaciones}
